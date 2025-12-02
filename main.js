@@ -54,6 +54,18 @@ async function login() {
   }
 }
 
+// Get available sites
+async function getSites() {
+  try {
+    const response = await instance.get('/api/self/sites');
+    console.log('Available sites:', response.data.data.map(s => `${s.name} (${s.desc})`).join(', '));
+    return response.data.data;
+  } catch (error) {
+    console.error('Failed to get sites:', error.message);
+    return [];
+  }
+}
+
 // Reset a single device by MAC address
 async function reconnectClient(mac) {
     try {
@@ -110,6 +122,7 @@ async function logout() {
 // Main function to execute the workflow
 async function main() {
   await login();
+  await getSites();
   await reconnectAllClients();
   await logout();
 }
