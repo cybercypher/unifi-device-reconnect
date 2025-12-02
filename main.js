@@ -8,10 +8,25 @@ const username = process.env.USERNAME;
 const password = process.env.PASSWORD;
 const site = process.env.SITE; // Replace with the site name if different
 
-// Device MAC address to reset
-const deviceMac = process.env.DEVICE_MAC;
+// Device MAC addresses to reset (can be comma-separated in env or passed as CLI args)
+let deviceMacs = [];
 
+// Check for command-line arguments first
+if (process.argv.length > 2) {
+  deviceMacs = process.argv.slice(2);
+} else if (process.env.DEVICE_MAC) {
+  // Fall back to environment variable (supports comma-separated values)
+  deviceMacs = process.env.DEVICE_MAC.split(',').map(mac => mac.trim()).filter(mac => mac);
+}
 
+if (deviceMacs.length === 0) {
+  console.error('Error: No device MAC addresses provided.');
+  console.error('Usage: node main.js <mac1> [mac2] [mac3] ...');
+  console.error('Or set DEVICE_MAC in .env file (comma-separated for multiple devices)');
+  process.exit(1);
+}
+
+console.log(`Devices to reconnect: ${deviceMacs.join(', ')}`);
 
 // Create an axios instance with necessary settings
 const instance = axios.create({
@@ -39,22 +54,46 @@ async function login() {
   }
 }
 
-// Reset the device by MAC address
-async function reconnectClient() {
+// Reset a single device by MAC address
+async function reconnectClient(mac) {
     try {
       const response = await instance.post(`/api/s/${site}/cmd/stamgr`, {
         cmd: 'kick-sta',
-        mac: deviceMac, // The MAC address of the client to reconnect
+        mac: mac, // The MAC address of the client to reconnect
       });
-      console.log('Client reconnect command sent:', response.data);
+      console.log(`✓ Client ${mac} reconnect command sent:`, response.data);
+      return { mac, success: true };
     } catch (error) {
       if (error.response) {
-        console.error('Failed to reconnect client:', error.response.data);
+        console.error(`✗ Failed to reconnect client ${mac}:`, error.response.data);
       } else {
-        console.error('Failed to reconnect client:', error.message);
+        console.error(`✗ Failed to reconnect client ${mac}:`, error.message);
       }
+      return { mac, success: false, error: error.message };
     }
   }
+
+// Reconnect all devices
+async function reconnectAllClients() {
+  console.log(`\nReconnecting ${deviceMacs.length} device(s)...\n`);
+  const results = [];
+
+  for (const mac of deviceMacs) {
+    const result = await reconnectClient(mac);
+    results.push(result);
+  }
+
+  // Summary
+  const successful = results.filter(r => r.success).length;
+  const failed = results.filter(r => !r.success).length;
+
+  console.log(`\n=== Summary ===`);
+  console.log(`Total devices: ${deviceMacs.length}`);
+  console.log(`Successful: ${successful}`);
+  console.log(`Failed: ${failed}`);
+
+  return results;
+}
   
   
 
@@ -71,7 +110,7 @@ async function logout() {
 // Main function to execute the workflow
 async function main() {
   await login();
-  await reconnectClient();
+  await reconnectAllClients();
   await logout();
 }
 
